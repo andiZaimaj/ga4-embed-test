@@ -70,8 +70,14 @@
   <button onclick="location.reload()">Reload page</button>
 </div>
 
+<h2>Google Ads cookies on this domain</h2>
+<pre id="d-gclcookies">reading…</pre>
+
 <h2>Parsed values</h2>
 <pre id="d-parsed">—</pre>
+
+<h2>Click IDs in the URL</h2>
+<pre id="d-clicks">—</pre>
 
 <h2>Agent embed</h2>
 <table>
@@ -112,6 +118,7 @@ if (/^G-[A-Z0-9]+$/i.test(MID)) {
 // ------------------------------------------------------------- diagnostics
 const $ = (id) => document.getElementById(id);
 const UTM_KEYS = ['utm_source','utm_medium','utm_campaign','utm_term','utm_content'];
+const CLICK_KEYS = ['gclid','gbraid','wbraid','fbclid','msclkid','ttclid'];
 
 function jar() {
   const out = {};
@@ -136,6 +143,15 @@ function parseSessionId(container) {
   return f ? parseInt(f.slice(1), 10) : null;
 }
 
+// _gcl_aw looks like  GCL.<timestamp>.<gclid>
+// The gclid is everything after the second dot - it can itself contain dots,
+// so do not split-and-index blindly.
+function parseGclidFromCookie(gclAw) {
+  if (!gclAw) return null;
+  const m = String(gclAw).match(/^GCL\.\d+\.(.+)$/);
+  return m ? m[1] : null;
+}
+
 function registrableDomain() {
   const parts = location.hostname.split('.');
   return parts.length <= 2 ? location.hostname : parts.slice(-2).join('.');
@@ -155,15 +171,28 @@ function refresh() {
   $('d-gtag').innerHTML = typeof window.gtag === 'function'
     ? '<span class="ok">yes</span>' : '<span class="bad">no</span>';
 
+  const gclCookies = Object.keys(c).filter(k => k.startsWith('_gcl'));
+
   $('d-cookies').textContent = gaCookies.length
     ? gaCookies.map(k => k + ' = ' + c[k]).join('\n')
     : '(none yet — GA4 writes them a moment after load; press Refresh)';
 
+  $('d-gclcookies').textContent = gclCookies.length
+    ? gclCookies.map(k => k + ' = ' + c[k]).join('\n')
+    : '(none — Google Ads cookies only appear after arriving with a real gclid ' +
+      'from an ad click; a hand-typed ?gclid= does not create them)';
+
   $('d-parsed').textContent = JSON.stringify({
     client_id: parseClientId(c['_ga']),
     session_id: parseSessionId(containerName ? c[containerName] : null),
-    container_name: containerName
+    container_name: containerName,
+    gclid_from_url: params.get('gclid') ?? null,
+    gclid_from_cookie: parseGclidFromCookie(c['_gcl_aw'])
   }, null, 2);
+
+  const clicks = {};
+  for (const k of CLICK_KEYS) clicks[k] = params.get(k) ?? null;
+  $('d-clicks').textContent = JSON.stringify(clicks, null, 2);
 
   const loader = [...document.querySelectorAll('script[src]')]
     .map(s => s.src).find(s => /alita-embed\.js/.test(s)) || null;
@@ -199,6 +228,7 @@ function refresh() {
 
   const u = new URL(location.href);
   UTM_KEYS.forEach((k, i) => u.searchParams.set(k, ['newsletter','email','q3_launch','probe_term','probe_content'][i]));
+  u.searchParams.set('gclid', 'TEST_GCLID_abc123');
   $('lnk-utm').href = u.toString();
 }
 
