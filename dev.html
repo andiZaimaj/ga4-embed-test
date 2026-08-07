@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow, noarchive">
+<title>GA4 embed test page — dev</title>
+
+<!--
+  Same test page as index.html, pointed at the DEV environment.
+
+  index.html loads the production loader from CloudFront, which hardcodes the
+  production hub - so it can only ever exercise production. This page loads a
+  local copy of the loader with host and the postMessage target repointed at
+  dev.alitahealth.ai, which is the only way to get the dev widget and the dev
+  loader onto the same page.
+
+  Everything else is unchanged: this page is not on alitahealth.ai, so the
+  agent iframe is genuinely cross-origin and the _ga cookies belong to
+  github.io, exactly as they would on a customer's own domain.
+
+  Agent can be supplied per-visit:  ?org=<uuid>&agent=<uuid>
+  GA4 measurement id:               ?mid=G-XXXXXXXXXX
+-->
+
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 15px/1.55 system-ui, -apple-system, Segoe UI, sans-serif;
+         margin: 0; padding: 28px 20px 140px; max-width: 860px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  h2 { font-size: 15px; margin: 26px 0 8px; }
+  .sub { opacity: .65; margin: 0 0 22px; }
+  pre { background: rgba(127,127,127,.12); padding: 12px 14px; border-radius: 8px;
+        overflow-x: auto; font: 12px/1.5 ui-monospace, Consolas, monospace; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0 0; }
+  button, .btn { font: 14px system-ui; padding: 8px 14px; border-radius: 7px;
+                 border: 1px solid rgba(127,127,127,.4); background: transparent;
+                 cursor: pointer; color: inherit; text-decoration: none; }
+  .ok   { color: #0a7d34; font-weight: 600; }
+  .bad  { color: #b3261e; font-weight: 600; }
+  .wait { color: #8a6d00; font-weight: 600; }
+  .note { background: rgba(224,168,0,.14); border-left: 3px solid #e0a800;
+          padding: 10px 14px; border-radius: 0 6px 6px 0; margin: 18px 0; }
+  code { background: rgba(127,127,127,.15); padding: 1px 5px; border-radius: 4px; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  td { padding: 5px 8px; border-bottom: 1px solid rgba(127,127,127,.2);
+       vertical-align: top; }
+  td:first-child { width: 190px; opacity: .7; }
+</style>
+</head>
+<body>
+
+<h1>GA4 embed test page — dev</h1>
+<p class="sub">Points at <code>dev.alitahealth.ai</code> via a local copy of the loader.</p>
+
+<div class="note">
+  <b>Why this page exists separately.</b> The shipped loader hardcodes
+  <code>https://hub.alitahealth.ai/</code> and ignores the <code>host</code> attribute
+  in the snippet, so the dev embed snippet loads the <i>production</i> widget. This
+  page loads <code>alita-embed.dev.js</code> instead — the same loader with that one
+  value repointed — which is what puts the dev widget and the dev loader on the same
+  page. <code>index.html</code> stays untouched for production sign-off.
+</div>
+
+<div id="missing-ids" class="note" style="display:none">
+  <b>No agent ids given.</b> Add them to the URL:<br>
+  <code>?org=&lt;ORG_UUID&gt;&amp;agent=&lt;AGENT_UUID&gt;</code><br>
+  Both come from the dev Hub: open an agent &rarr; <b>Install Agent</b> &rarr; the
+  snippet contains <code>bbuilder-org-id</code> and <code>bbuilder-app-id</code>.
+</div>
+
+<h2>This page</h2>
+<table>
+  <tr><td>Origin</td><td id="d-origin">—</td></tr>
+  <tr><td>Registrable domain</td><td id="d-domain">—</td></tr>
+  <tr><td>GA4 measurement id</td><td id="d-mid">—</td></tr>
+  <tr><td>gtag loaded</td><td id="d-gtag">—</td></tr>
+  <tr><td>Agent / org ids</td><td id="d-ids">—</td></tr>
+</table>
+
+<h2>GA4 cookies on this domain</h2>
+<pre id="d-cookies">reading…</pre>
+<div class="row">
+  <button onclick="refresh()">Refresh</button>
+  <button onclick="dropGa()">Delete GA4 cookies</button>
+  <button onclick="location.reload()">Reload page</button>
+</div>
+
+<h2>Parsed values</h2>
+<pre id="d-parsed">—</pre>
+
+<h2>Agent embed</h2>
+<table>
+  <tr><td>Loader script</td><td id="d-loader">—</td></tr>
+  <tr><td>Widget iframe origin</td><td id="d-iframe">—</td></tr>
+  <tr><td>Cross-origin to this page</td><td id="d-xorigin">—</td></tr>
+  <tr><td>Host URL passed in</td><td id="d-url">—</td></tr>
+  <tr><td>Widget asked for analytics</td><td id="d-asked" class="wait">waiting…</td></tr>
+</table>
+
+<h2>What the loader handed to the widget</h2>
+<pre id="d-handed">nothing handed over yet</pre>
+
+<h2>Campaign parameters</h2>
+<p class="sub" style="margin:0 0 8px">Append them to this page's URL to test capture.</p>
+<pre id="d-utm">—</pre>
+<div class="row">
+  <a class="btn" id="lnk-utm" href="#">Reload with test campaign params</a>
+</div>
+
+<h2>Notes</h2>
+<pre id="d-notes">—</pre>
+
+<script>
+// ---------------------------------------------------------------- GA4 setup
+const params = new URLSearchParams(location.search);
+const MID   = params.get('mid')   || 'G-JHEFQJB08Z';
+const ORG   = params.get('org')   || '';
+const AGENT = params.get('agent') || '';
+
+window.dataLayer = window.dataLayer || [];
+function gtag(){ dataLayer.push(arguments); }
+
+if (/^G-[A-Z0-9]+$/i.test(MID)) {
+  gtag('js', new Date());
+  gtag('config', MID, { debug_mode: true });
+  const s = document.createElement('script');
+  s.async = true;
+  s.src = 'https://www.googletagmanager.com/gtag/js?id=' + encodeURIComponent(MID);
+  document.head.appendChild(s);
+}
+
+// ------------------------------------------------------------- diagnostics
+const $ = (id) => document.getElementById(id);
+const UTM_KEYS = ['utm_source','utm_medium','utm_campaign','utm_term','utm_content'];
+
+function jar() {
+  const out = {};
+  for (const part of document.cookie.split('; ')) {
+    const i = part.indexOf('=');
+    if (i > 0) out[part.slice(0, i)] = part.slice(i + 1);
+  }
+  return out;
+}
+
+function parseClientId(ga) {
+  if (!ga) return null;
+  const p = String(ga).split('.');
+  return p.length >= 4 ? p.slice(2, 4).join('.') : null;
+}
+
+// Three dot-segments, with $-delimited fields inside the third. session_id is the
+// `s` field - not a dot position, and not `t`, which holds the last-hit timestamp.
+function parseSessionId(container) {
+  if (!container) return null;
+  const third = String(container).split('.')[2];
+  if (!third) return null;
+  const f = third.split('$').find(x => /^s\d+$/.test(x));
+  return f ? parseInt(f.slice(1), 10) : null;
+}
+
+function registrableDomain() {
+  const parts = location.hostname.split('.');
+  return parts.length <= 2 ? location.hostname : parts.slice(-2).join('.');
+}
+
+function refresh() {
+  const c = jar();
+  const gaCookies = Object.keys(c).filter(k => k.startsWith('_ga'));
+  const containerName = Object.keys(c).find(
+    k => k.startsWith('_ga_') && /^GS\d+\./.test(c[k])) || null;
+
+  $('d-origin').textContent = location.origin;
+  $('d-domain').textContent = registrableDomain();
+  $('d-mid').innerHTML = /^G-[A-Z0-9]+$/i.test(MID)
+    ? '<code>' + MID + '</code>'
+    : '<span class="bad">not set</span> — add <code>?mid=G-XXXXXXXXXX</code>';
+  $('d-gtag').innerHTML = typeof window.gtag === 'function'
+    ? '<span class="ok">yes</span>' : '<span class="bad">no</span>';
+  $('d-ids').innerHTML = (ORG && AGENT)
+    ? '<code>' + AGENT + '</code><br><code>' + ORG + '</code>'
+    : '<span class="bad">missing</span>';
+
+  $('d-cookies').textContent = gaCookies.length
+    ? gaCookies.map(k => k + ' = ' + c[k]).join('\n')
+    : '(none yet — GA4 writes them a moment after load; press Refresh)';
+
+  $('d-parsed').textContent = JSON.stringify({
+    client_id: parseClientId(c['_ga']),
+    session_id: parseSessionId(containerName ? c[containerName] : null),
+    container_name: containerName
+  }, null, 2);
+
+  const loader = [...document.querySelectorAll('script[src]')]
+    .map(s => s.src).find(s => /alita-embed/.test(s)) || null;
+  $('d-loader').innerHTML = loader ? '<code>' + loader + '</code>'
+    : '<span class="bad">not found</span>';
+
+  const f = document.querySelector('iframe[id^="agent-"]');
+  if (f && f.src) {
+    const o = new URL(f.src).origin;
+    $('d-iframe').innerHTML = '<code>' + o + '</code>';
+    $('d-xorigin').innerHTML = (o !== location.origin)
+      ? '<span class="ok">yes</span> — same as a real customer'
+      : '<span class="bad">no</span> — this page cannot validate anything';
+    $('d-url').textContent = new URL(f.src).searchParams.get('url') || '(none)';
+  } else {
+    $('d-iframe').textContent = 'iframe not created yet';
+    $('d-xorigin').textContent = '—';
+    $('d-url').textContent = '—';
+  }
+
+  const utm = {};
+  for (const k of UTM_KEYS) utm[k] = params.get(k) ?? null;
+  $('d-utm').textContent = JSON.stringify(utm, null, 2);
+
+  const notes = [];
+  if (!ORG || !AGENT)
+    notes.push('No agent ids — add ?org=<uuid>&agent=<uuid> or nothing will load.');
+  if (!c['_ga'])
+    notes.push('No _ga cookie yet. GA4 writes it shortly after gtag.js loads; press Refresh.');
+  if (Object.keys(c).filter(k => k.startsWith('_ga_') && /^GS\d+\./.test(c[k])).length > 1)
+    notes.push('More than one GA4 container cookie present — good case for testing container selection.');
+  notes.push('If "Widget asked for analytics" stays orange, the dev widget is still on ' +
+             'code that does not request identifiers yet.');
+  $('d-notes').textContent = notes.join('\n');
+
+  const u = new URL(location.href);
+  UTM_KEYS.forEach((k, i) => u.searchParams.set(k, ['newsletter','email','q3_launch','probe_term','probe_content'][i]));
+  $('lnk-utm').href = u.toString();
+}
+
+function dropGa() {
+  const d = registrableDomain();
+  for (const k of Object.keys(jar())) {
+    if (!k.startsWith('_ga')) continue;
+    document.cookie = k + '=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+    document.cookie = k + '=; path=/; domain=' + d + '; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+    document.cookie = k + '=; path=/; domain=.' + d + '; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+  }
+  refresh();
+}
+
+// The widget posts its request to window.parent — this page. Seeing it proves the
+// widget-side code ran; the loader's reply goes to the iframe and is invisible here,
+// which is why the loader copy also fires a CustomEvent with what it sent.
+addEventListener('message', (e) => {
+  if (e.data && e.data.type === 'alita-request-analytics') {
+    $('d-asked').className = 'ok';
+    $('d-asked').textContent = 'yes — request received from ' + e.origin;
+  }
+});
+
+document.addEventListener('harness-loader-sent', (e) => {
+  const a = e.detail || {};
+  $('d-handed').textContent = JSON.stringify({
+    read_from_this_page: {
+      _ga: a._ga,
+      _ga_container_name: a._ga_container_name,
+      _ga_container: a._ga_container,
+      all_containers_found: Object.keys(a._ga_containers || {})
+    },
+    parsed_identifiers: {
+      ga_client_id: parseClientId(a._ga),
+      ga_session_id: parseSessionId(a._ga_container),
+      ga_container_name: a._ga_container_name || null
+    }
+  }, null, 2);
+});
+
+// Build the embed only when ids were supplied, so a bare visit fails loudly
+// rather than silently rendering nothing.
+if (!ORG || !AGENT) {
+  $('missing-ids').style.display = '';
+} else {
+  const el = document.createElement('embed-agent');
+  el.setAttribute('bbuilder-org-id', ORG);
+  el.setAttribute('bbuilder-app-id', AGENT);
+  el.setAttribute('chat-bubble', 'true');
+  el.setAttribute('style',
+    'bottom:0; right:0; position: fixed; background-color: transparent; z-index: 100000;');
+  document.body.appendChild(el);
+
+  const s = document.createElement('script');
+  s.type = 'module';
+  s.src = './alita-embed.dev.js';
+  document.head.appendChild(s);
+}
+
+refresh();
+setTimeout(refresh, 1200);
+setTimeout(refresh, 3000);
+</script>
+
+</body>
+</html>
